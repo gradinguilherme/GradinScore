@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Paleta — gramado à noite sob refletor, não o cinza/creme genérico */
+  --pitch-night: #0B1210;   /* fundo base */
+  --pitch-deep: #13201A;    /* fundo de cartão */
+  --pitch-line: #2A3D30;    /* bordas, divisores — linha de campo */
+  --chalk: #EDEFE7;         /* texto primário — giz de marcação */
+  --chalk-dim: #9BA79C;     /* texto secundário */
+  --floodlight: #E8B84B;    /* acento único — luz de refletor */
+  --floodlight-dim: #7A6430;
+  --alerta: #D9714E;        /* avisos de fallback/erro — terracota apagado, não vermelho puro */
+
+  /* Tipografia */
+  --font-scoreboard: 'Archivo Black', sans-serif;      /* números grandes, hero */
+  --font-display: 'Barlow Condensed', sans-serif;      /* títulos condensados */
+  --font-body: 'Inter', sans-serif;                    /* corpo, labels */
+  --font-data: 'IBM Plex Mono', monospace;              /* estatísticas */
+
+  --raio: 3px;              /* quase sem arredondamento — campo tem linhas retas */
+  --sombra-cartao: 0 1px 0 rgba(237, 239, 231, 0.06) inset, 0 8px 24px rgba(0,0,0,0.35);
+}
+
+* { box-sizing: border-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

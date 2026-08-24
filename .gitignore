@@ -1,0 +1,24 @@
+# Segredos — NUNCA versionar
+.env
+.env.local
+.env.*.local
+
+# Banco de dados local (dev) — produção usa Turso, não este arquivo
+analises.db
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
+# Editor / SO
+.vscode/
+.DS_Store
+Thumbs.db

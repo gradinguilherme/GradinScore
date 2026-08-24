@@ -1,0 +1,46 @@
+-- Schema do banco local (SQLite) para o web app de análise pré-jogo.
+-- Rodar uma vez: sqlite3 analises.db < schema.sql
+
+CREATE TABLE IF NOT EXISTS ligas (
+    id_api INTEGER PRIMARY KEY,      -- id retornado pela API-Football (ex: 71 = Brasileirão)
+    nome TEXT NOT NULL,
+    pais TEXT NOT NULL,
+    tem_estatisticas INTEGER NOT NULL DEFAULT 1,  -- 0 = sem statistics_fixtures (ex: Bundesliga) -> usar fallback
+    temporada_atual INTEGER,         -- ano da temporada corrente confirmada (ex: 2026)
+    atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS times (
+    id_api INTEGER PRIMARY KEY,      -- id retornado pela API-Football (ex: 118 = Bahia)
+    nome TEXT NOT NULL,
+    id_liga INTEGER NOT NULL,
+    pais TEXT NOT NULL,
+    FOREIGN KEY (id_liga) REFERENCES ligas(id_api)
+);
+
+CREATE INDEX IF NOT EXISTS idx_times_liga ON times(id_liga);
+
+-- Formato compacto: só os números finais já calculados, não os fixtures brutos.
+-- resultado_json guarda algo como:
+-- {"casa": {"gols":1.4,"gols_sofridos":1.0,"xg":1.57,"xg_sofrido":0.63,"chutes":15.6,"chutes_gol":5.2},
+--  "fora":  {...},
+--  "h2h": [{"data":"2026-08-09","placar":"0-0","mandante":"Bahia"}, ...],
+--  "fallback": false}
+CREATE TABLE IF NOT EXISTS analises (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_liga INTEGER NOT NULL,
+    id_time_casa INTEGER NOT NULL,
+    id_time_fora INTEGER NOT NULL,
+    data_partida TEXT,
+    resultado_json TEXT NOT NULL,
+    criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_liga) REFERENCES ligas(id_api),
+    FOREIGN KEY (id_time_casa) REFERENCES times(id_api),
+    FOREIGN KEY (id_time_fora) REFERENCES times(id_api)
+);
+
+CREATE INDEX IF NOT EXISTS idx_analises_criado ON analises(criado_em);
+
+-- Retenção: apaga análises com mais de 30 dias.
+-- Rodar isso a cada início do app (é barato, não precisa de cron/task scheduler separado).
+-- DELETE FROM analises WHERE criado_em < datetime('now', '-30 days');

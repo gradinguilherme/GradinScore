@@ -1,0 +1,145 @@
+"""
+Popula o banco local (analises.db) com ligas e times das competições confirmadas.
+Idempotente: pode ser interrompido e rodado de novo sem duplicar dado (usa INSERT OR IGNORE).
+
+Antes de rodar:
+    1. sqlite3 analises.db < schema.sql   (cria as tabelas, uma vez só)
+    2. Windows (PowerShell): $env:API_FOOTBALL_KEY = "sua_chave_aqui"
+    3. python popular_banco.py
+
+No free tier (100 req/dia), isso NÃO termina numa execução só — rode em partes ao
+longo de alguns dias, ou de uma vez após assinar o Pro (7.500 req/dia).
+O script pula ligas já totalmente populadas automaticamente.
+"""
+
+import os
+import sqlite3
+import time
+import requests
+
+API_KEY = os.environ.get("API_FOOTBALL_KEY")
+BASE_URL = "https://v3.football.api-sports.io"
+# Caminho relativo à pasta do próprio script — funciona não importa de onde o PowerShell é chamado
+PASTA_SCRIPT = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(PASTA_SCRIPT, "analises.db")
+SCHEMA_PATH = os.path.join(PASTA_SCRIPT, "schema.sql")
+
+if not API_KEY:
+    raise SystemExit(
+        "Variável de ambiente API_FOOTBALL_KEY não encontrada.\n"
+        "Defina antes de rodar: $env:API_FOOTBALL_KEY = 'sua_chave'"
+    )
+
+HEADERS = {"x-apisports-key": API_KEY}
+
+
+def garantir_schema(conn):
+    """Cria as tabelas a partir do schema.sql se ainda não existirem — sem depender do CLI sqlite3."""
+    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+        conn.executescript(f.read())
+    conn.commit()
+
+# Ligas já confirmadas nos testes anteriores: (id_api, nome, pais, tem_estatisticas, temporada_atual)
+LIGAS_CONFIRMADAS = [
+    (39,  "Premier League", "England", 1, 2026),
+    (140, "La Liga", "Spain", 1, 2026),
+    (135, "Serie A", "Italy", 1, 2026),
+    (78,  "Bundesliga", "Germany", 0, 2026),  # sem statistics_fixtures — fica no fallback
+    (61,  "Ligue 1", "France", 1, 2026),
+    (45,  "FA Cup", "England", 1, 2025),      # sem flag "current", mas 2025 confirmado com estatística
+    (143, "Copa del Rey", "Spain", 1, 2025),
+    (137, "Coppa Italia", "Italy", 1, 2026),
+    (81,  "DFB Pokal", "Germany", 1, 2026),
+    (66,  "Coupe de France", "France", 1, 2025),
+    (2,   "UEFA Champions League", "World", 1, 2026),
+    (3,   "UEFA Europa League", "World", 1, 2026),
+    (848, "UEFA Europa Conference League", "World", 1, 2026),
+    (71,  "Serie A", "Brazil", 1, 2026),
+    (72,  "Serie B", "Brazil", 1, 2026),
+    (73,  "Copa Do Brasil", "Brazil", 1, 2026),
+    (13,  "CONMEBOL Libertadores", "World", 1, 2026),
+    (11,  "CONMEBOL Sudamericana", "World", 1, 2026),
+]
+
+
+def get(endpoint, params=None, tentativas=2):
+    for tentativa in range(tentativas):
+        resp = requests.get(f"{BASE_URL}/{endpoint}", headers=HEADERS, params=params or {})
+        resp.raise_for_status()
+        data = resp.json()
+        remaining = resp.headers.get("x-ratelimit-requests-remaining")
+        limit = resp.headers.get("x-ratelimit-requests-limit")
+        errors = data.get("errors")
+        if errors and "rateLimit" in errors and tentativa < tentativas - 1:
+            print("    [rate limit por minuto, aguardando 15s]")
+            time.sleep(15)
+            continue
+        if errors:
+            print(f"    [ERRO] {errors}")
+        print(f"    [status] {endpoint} -> {resp.status_code} | restantes hoje: {remaining}/{limit}")
+        return data
+
+
+def liga_ja_populada(conn, id_liga):
+    cur = conn.execute("SELECT COUNT(*) FROM times WHERE id_liga = ?", (id_liga,))
+    return cur.fetchone()[0] > 0
+
+
+def popular_ligas(conn):
+    conn.executemany(
+        """INSERT OR IGNORE INTO ligas (id_api, nome, pais, tem_estatisticas, temporada_atual)
+           VALUES (?, ?, ?, ?, ?)""",
+        LIGAS_CONFIRMADAS,
+    )
+    conn.commit()
+    print(f"[OK] {len(LIGAS_CONFIRMADAS)} ligas registradas (ou já existentes) na tabela ligas.\n")
+
+
+def popular_times(conn):
+    for id_liga, nome_liga, pais, tem_stats, temporada in LIGAS_CONFIRMADAS:
+        if liga_ja_populada(conn, id_liga):
+            print(f"[SKIP] {nome_liga} ({pais}) já tem times cadastrados — pulando.")
+            continue
+
+        print(f"Buscando times de: {nome_liga} ({pais}) — liga id={id_liga}, temporada {temporada}")
+        data = get("teams", {"league": id_liga, "season": temporada})
+        if data is None:
+            print(f"  [FALHOU] sem resposta para {nome_liga}, tente rodar de novo depois.")
+            time.sleep(7)
+            continue
+
+        times_resp = data.get("response", [])
+        linhas = [
+            (t["team"]["id"], t["team"]["name"], id_liga, t["team"]["country"])
+            for t in times_resp
+        ]
+        conn.executemany(
+            "INSERT OR IGNORE INTO times (id_api, nome, id_liga, pais) VALUES (?, ?, ?, ?)",
+            linhas,
+        )
+        conn.commit()
+        print(f"  [OK] {len(linhas)} times inseridos para {nome_liga}.\n")
+
+        time.sleep(7)  # free tier: 10 req/min
+
+
+if __name__ == "__main__":
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
+    garantir_schema(conn)
+
+    print("=== Populando tabela de ligas ===")
+    popular_ligas(conn)
+
+    print("=== Populando times por liga (idempotente — pode rodar em várias sessões) ===")
+    popular_times(conn)
+
+    total_times = conn.execute("SELECT COUNT(*) FROM times").fetchone()[0]
+    total_ligas_completas = conn.execute(
+        """SELECT COUNT(DISTINCT id_liga) FROM times"""
+    ).fetchone()[0]
+    print(f"\n=== Resumo: {total_times} times cadastrados, cobrindo {total_ligas_completas}/{len(LIGAS_CONFIRMADAS)} ligas ===")
+    if total_ligas_completas < len(LIGAS_CONFIRMADAS):
+        print("Rode o script de novo (hoje ou amanhã, conforme sua cota) para completar as ligas restantes.")
+
+    conn.close()
