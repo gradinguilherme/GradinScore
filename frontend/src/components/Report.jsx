@@ -40,6 +40,8 @@ export default function Report({ resultado }) {
           {linhaStat('Gols sofridos (média)', casa.gols_sofridos)}
           {!fallback && linhaStat('Chutes (média)', casa.chutes)}
           {!fallback && linhaStat('Chutes ao gol (média)', casa.chutes_gol)}
+          {!fallback && linhaStat('Chutes sofridos (média)', casa.chutes_sofridos)}
+          {!fallback && linhaStat('Chutes ao gol sofridos (média)', casa.chutes_gol_sofridos)}
           <div className="campo-ajuda" style={{ marginTop: 8 }}>
             Baseado nos últimos {casa.jogos_considerados} jogos em casa.
           </div>
@@ -53,6 +55,8 @@ export default function Report({ resultado }) {
           {linhaStat('Gols sofridos (média)', fora.gols_sofridos)}
           {!fallback && linhaStat('Chutes (média)', fora.chutes)}
           {!fallback && linhaStat('Chutes ao gol (média)', fora.chutes_gol)}
+          {!fallback && linhaStat('Chutes sofridos (média)', fora.chutes_sofridos)}
+          {!fallback && linhaStat('Chutes ao gol sofridos (média)', fora.chutes_gol_sofridos)}
           <div className="campo-ajuda" style={{ marginTop: 8, textAlign: 'right' }}>
             Baseado nos últimos {fora.jogos_considerados} jogos fora.
           </div>

@@ -379,6 +379,40 @@ select:focus, input:focus {
   color: var(--chalk-dim);
 }
 
+/* ---------- Tabela de classificação ---------- */
+
+.tabela-classificacao {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-data);
+  font-size: 13px;
+}
+
+.tabela-classificacao th {
+  text-align: left;
+  color: var(--chalk-dim);
+  font-weight: 500;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--pitch-line);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tabela-classificacao td {
+  padding: 6px 8px;
+  border-bottom: 1px dashed rgba(42, 61, 48, 0.5);
+}
+
+.tabela-classificacao td:nth-child(2) {
+  font-family: var(--font-body);
+  font-size: 13.5px;
+}
+
+.tabela-classificacao tr:nth-child(-n+4) td:first-child {
+  color: var(--floodlight);
+}
+
 /* ---------- Estado vazio ---------- */
 
 .estado-vazio {

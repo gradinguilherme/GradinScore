@@ -17,6 +17,10 @@ export async function getTimes(idLiga, busca) {
   return tratar(await fetch(`${API_URL}/ligas/${idLiga}/times${params}`))
 }
 
+export async function getTabela(idLiga) {
+  return tratar(await fetch(`${API_URL}/ligas/${idLiga}/tabela`))
+}
+
 export async function gerarAnalise(pedido) {
   return tratar(
     await fetch(`${API_URL}/analise`, {

@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS ligas (
     nome TEXT NOT NULL,
     pais TEXT NOT NULL,
     tem_estatisticas INTEGER NOT NULL DEFAULT 1,  -- 0 = sem statistics_fixtures (ex: Bundesliga) -> usar fallback
+    eh_liga_pontos_corridos INTEGER NOT NULL DEFAULT 0,  -- 1 = liga de tabela única (mostra classificação), 0 = copa/mata-mata
     temporada_atual INTEGER,         -- ano da temporada corrente confirmada (ex: 2026)
     atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
 );

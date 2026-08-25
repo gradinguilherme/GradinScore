@@ -74,26 +74,42 @@ def garantir_schema(conn):
     with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
         rodar_script(conn, f.read())
 
-# Ligas já confirmadas nos testes anteriores: (id_api, nome, pais, tem_estatisticas, temporada_atual)
+
+def migrar_colunas_novas(conn):
+    """Adiciona colunas novas em bancos que já existiam antes delas serem criadas no schema.sql
+    — evita ter que apagar e recriar o banco (local ou Turso) toda vez que o schema evolui.
+    Seguro rodar sempre: se a coluna já existe (banco novo, criado direto com ela), só ignora."""
+    try:
+        conn.execute("ALTER TABLE ligas ADD COLUMN eh_liga_pontos_corridos INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        print("[migração] coluna eh_liga_pontos_corridos adicionada à tabela ligas.")
+    except Exception as e:
+        if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+            pass  # coluna já existe — nada a fazer
+        else:
+            raise
+
+# Ligas já confirmadas nos testes anteriores:
+# (id_api, nome, pais, tem_estatisticas, eh_liga_pontos_corridos, temporada_atual)
 LIGAS_CONFIRMADAS = [
-    (39,  "Premier League", "England", 1, 2026),
-    (140, "La Liga", "Spain", 1, 2026),
-    (135, "Serie A", "Italy", 1, 2026),
-    (78,  "Bundesliga", "Germany", 0, 2026),  # sem statistics_fixtures — fica no fallback
-    (61,  "Ligue 1", "France", 1, 2026),
-    (45,  "FA Cup", "England", 1, 2025),      # sem flag "current", mas 2025 confirmado com estatística
-    (143, "Copa del Rey", "Spain", 1, 2025),
-    (137, "Coppa Italia", "Italy", 1, 2026),
-    (81,  "DFB Pokal", "Germany", 1, 2026),
-    (66,  "Coupe de France", "France", 1, 2025),
-    (2,   "UEFA Champions League", "World", 1, 2026),
-    (3,   "UEFA Europa League", "World", 1, 2026),
-    (848, "UEFA Europa Conference League", "World", 1, 2026),
-    (71,  "Serie A", "Brazil", 1, 2026),
-    (72,  "Serie B", "Brazil", 1, 2026),
-    (73,  "Copa Do Brasil", "Brazil", 1, 2026),
-    (13,  "CONMEBOL Libertadores", "World", 1, 2026),
-    (11,  "CONMEBOL Sudamericana", "World", 1, 2026),
+    (39,  "Premier League", "England", 1, 1, 2026),
+    (140, "La Liga", "Spain", 1, 1, 2026),
+    (135, "Serie A", "Italy", 1, 1, 2026),
+    (78,  "Bundesliga", "Germany", 0, 1, 2026),  # sem statistics_fixtures — fica no fallback
+    (61,  "Ligue 1", "France", 1, 1, 2026),
+    (45,  "FA Cup", "England", 1, 0, 2025),      # sem flag "current", mas 2025 confirmado com estatística
+    (143, "Copa del Rey", "Spain", 1, 0, 2025),
+    (137, "Coppa Italia", "Italy", 1, 0, 2026),
+    (81,  "DFB Pokal", "Germany", 1, 0, 2026),
+    (66,  "Coupe de France", "France", 1, 0, 2025),
+    (2,   "UEFA Champions League", "World", 1, 0, 2026),
+    (3,   "UEFA Europa League", "World", 1, 0, 2026),
+    (848, "UEFA Europa Conference League", "World", 1, 0, 2026),
+    (71,  "Serie A", "Brazil", 1, 1, 2026),
+    (72,  "Serie B", "Brazil", 1, 1, 2026),
+    (73,  "Copa Do Brasil", "Brazil", 1, 0, 2026),
+    (13,  "CONMEBOL Libertadores", "World", 1, 0, 2026),
+    (11,  "CONMEBOL Sudamericana", "World", 1, 0, 2026),
 ]
 
 
@@ -123,16 +139,15 @@ def liga_ja_populada(conn, id_liga):
 def popular_ligas(conn):
     inserir_varios(
         conn,
-        """INSERT OR IGNORE INTO ligas (id_api, nome, pais, tem_estatisticas, temporada_atual)
-           VALUES (?, ?, ?, ?, ?)""",
+        """INSERT OR REPLACE INTO ligas (id_api, nome, pais, tem_estatisticas, eh_liga_pontos_corridos, temporada_atual)
+           VALUES (?, ?, ?, ?, ?, ?)""",
         LIGAS_CONFIRMADAS,
     )
-    conn.commit()
-    print(f"[OK] {len(LIGAS_CONFIRMADAS)} ligas registradas (ou já existentes) na tabela ligas.\n")
+    print(f"[OK] {len(LIGAS_CONFIRMADAS)} ligas registradas/atualizadas na tabela ligas.\n")
 
 
 def popular_times(conn):
-    for id_liga, nome_liga, pais, tem_stats, temporada in LIGAS_CONFIRMADAS:
+    for id_liga, nome_liga, pais, tem_stats, eh_liga, temporada in LIGAS_CONFIRMADAS:
         if liga_ja_populada(conn, id_liga):
             print(f"[SKIP] {nome_liga} ({pais}) já tem times cadastrados — pulando.")
             continue
@@ -162,6 +177,7 @@ def popular_times(conn):
 if __name__ == "__main__":
     conn = conectar()
     garantir_schema(conn)
+    migrar_colunas_novas(conn)
 
     print("=== Populando tabela de ligas ===")
     popular_ligas(conn)

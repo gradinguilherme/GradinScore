@@ -68,15 +68,13 @@ def forma_recente(team_id, season, mandante: bool, tem_estatisticas: bool, n=5):
     """
     Retorna médias dos últimos n jogos do time (em casa OU fora, conforme 'mandante').
     Se tem_estatisticas=False (ex: Bundesliga), retorna só gols marcados/sofridos,
-    sem chutes/xG — a liga não expõe isso.
-
-    xG sofrido foi removido por enquanto (não é prioridade da v1 e dobrava as chamadas
-    de estatística por análise, já que exigia buscar o jogo do adversário também).
+    sem chutes — a liga não expõe isso.
     """
     fixtures = _fixtures_time(team_id, season, mandante, n)
 
     gols_marcados, gols_sofridos = [], []
-    chutes, chutes_gol, xg = [], [], []
+    chutes, chutes_gol = [], []
+    chutes_sofridos, chutes_gol_sofridos = [], []
 
     for f in fixtures:
         eh_casa = f["teams"]["home"]["id"] == team_id
@@ -89,7 +87,11 @@ def forma_recente(team_id, season, mandante: bool, tem_estatisticas: bool, n=5):
             stats = _estatisticas_fixture(f["fixture"]["id"], team_id)
             chutes.append(stats.get("Total Shots"))
             chutes_gol.append(stats.get("Shots on Goal"))
-            xg.append(stats.get("expected_goals"))
+
+            adversario_id = f["teams"]["away"]["id"] if eh_casa else f["teams"]["home"]["id"]
+            stats_adv = _estatisticas_fixture(f["fixture"]["id"], adversario_id)
+            chutes_sofridos.append(stats_adv.get("Total Shots"))
+            chutes_gol_sofridos.append(stats_adv.get("Shots on Goal"))
 
     resultado = {
         "jogos_considerados": len(fixtures),
@@ -100,7 +102,8 @@ def forma_recente(team_id, season, mandante: bool, tem_estatisticas: bool, n=5):
         resultado.update({
             "chutes": _media(chutes),
             "chutes_gol": _media(chutes_gol),
-            "xg": _media(xg),  # pode vir null — ver nota no relatório sobre atraso de publicação
+            "chutes_sofridos": _media(chutes_sofridos),
+            "chutes_gol_sofridos": _media(chutes_gol_sofridos),
         })
     return resultado
 
@@ -119,3 +122,32 @@ def h2h(team1_id, team2_id, n=5):
             "placar": f"{f['goals']['home']}-{f['goals']['away']}",
         })
     return resultado
+
+
+def tabela_liga(id_liga, temporada):
+    """Retorna a classificação atual da liga. Só faz sentido para competições de pontos
+    corridos — copas de mata-mata não têm tabela única (a API costuma retornar vazio ou
+    uma estrutura por grupo, que não tratamos aqui)."""
+    data = _get("standings", {"league": id_liga, "season": temporada})
+    respostas = data.get("response", [])
+    if not respostas:
+        return []
+
+    grupos = respostas[0]["league"].get("standings", [])
+    if not grupos:
+        return []
+
+    primeiro_grupo = grupos[0]  # ligas de tabela única têm só um grupo
+    tabela = []
+    for time in primeiro_grupo:
+        tabela.append({
+            "posicao": time["rank"],
+            "time": time["team"]["name"],
+            "pontos": time["points"],
+            "jogos": time["all"]["played"],
+            "vitorias": time["all"]["win"],
+            "empates": time["all"]["draw"],
+            "derrotas": time["all"]["lose"],
+            "saldo_gols": time["goalsDiff"],
+        })
+    return tabela

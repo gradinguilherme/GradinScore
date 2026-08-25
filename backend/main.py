@@ -33,10 +33,25 @@ def startup():
 def listar_ligas():
     conn = get_conn()
     linhas = conn.query(
-        "SELECT id_api, nome, pais, tem_estatisticas, temporada_atual FROM ligas ORDER BY nome"
+        """SELECT id_api, nome, pais, tem_estatisticas, eh_liga_pontos_corridos, temporada_atual
+           FROM ligas ORDER BY nome"""
     )
     conn.close()
     return linhas
+
+
+@app.get("/ligas/{id_liga}/tabela")
+def tabela_liga(id_liga: int):
+    conn = get_conn()
+    ligas = conn.query("SELECT * FROM ligas WHERE id_api = ?", (id_liga,))
+    conn.close()
+    if not ligas:
+        raise HTTPException(404, "Liga não encontrada no banco local.")
+    liga = ligas[0]
+    if not liga["eh_liga_pontos_corridos"]:
+        raise HTTPException(400, "Esta competição não tem tabela de classificação única (é copa/mata-mata).")
+
+    return api_football.tabela_liga(liga["id_api"], liga["temporada_atual"])
 
 
 @app.get("/ligas/{id_liga}/times")

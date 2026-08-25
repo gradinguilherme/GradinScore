@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { getLigas, gerarAnalise } from '../api.js'
 import TeamSearch from '../components/TeamSearch.jsx'
 import LeagueSearch from '../components/LeagueSearch.jsx'
+import LeagueTable from '../components/LeagueTable.jsx'
 import Report from '../components/Report.jsx'
 
 export default function NovaAnalise() {
@@ -73,6 +74,8 @@ export default function NovaAnalise() {
             só gols e confrontos diretos.
           </div>
         )}
+
+        <LeagueTable key={liga?.id_api} liga={liga} />
 
         {liga && (
           <>
