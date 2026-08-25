@@ -1,19 +1,20 @@
 import json
-from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import api_football
-from db import get_conn, limpar_analises_antigas
+from db import get_conn, garantir_schema, limpar_analises_antigas
 
-app = FastAPI(title="Análise Pré-Jogo API")
+app = FastAPI(title="GradinScore API")
 
-# Em produção (Vercel), restrinja para o domínio real do frontend em vez de "*"
+# Em producao, troque "*" pela URL real do frontend na Vercel (variavel FRONTEND_URL)
+import os
+origens = os.environ.get("FRONTEND_URL", "*")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origens] if origens != "*" else ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -22,6 +23,8 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     conn = get_conn()
+    if conn.modo == "sqlite":
+        garantir_schema(conn)  # no Turso, o schema ja foi rodado manualmente uma vez
     limpar_analises_antigas(conn, dias=30)
     conn.close()
 
@@ -29,28 +32,28 @@ def startup():
 @app.get("/ligas")
 def listar_ligas():
     conn = get_conn()
-    linhas = conn.execute(
+    linhas = conn.query(
         "SELECT id_api, nome, pais, tem_estatisticas, temporada_atual FROM ligas ORDER BY nome"
-    ).fetchall()
+    )
     conn.close()
-    return [dict(l) for l in linhas]
+    return linhas
 
 
 @app.get("/ligas/{id_liga}/times")
 def listar_times(id_liga: int, q: str = Query(default="", description="Filtro de busca por nome")):
     conn = get_conn()
     if q:
-        linhas = conn.execute(
+        linhas = conn.query(
             "SELECT id_api, nome, pais FROM times WHERE id_liga = ? AND nome LIKE ? ORDER BY nome LIMIT 50",
             (id_liga, f"%{q}%"),
-        ).fetchall()
+        )
     else:
-        linhas = conn.execute(
+        linhas = conn.query(
             "SELECT id_api, nome, pais FROM times WHERE id_liga = ? ORDER BY nome LIMIT 50",
             (id_liga,),
-        ).fetchall()
+        )
     conn.close()
-    return [dict(t) for t in linhas]
+    return linhas
 
 
 class PedidoAnalise(BaseModel):
@@ -63,22 +66,19 @@ class PedidoAnalise(BaseModel):
 @app.post("/analise")
 def gerar_analise(pedido: PedidoAnalise):
     conn = get_conn()
-    liga = conn.execute(
-        "SELECT * FROM ligas WHERE id_api = ?", (pedido.id_liga,)
-    ).fetchone()
-    if not liga:
+    ligas = conn.query("SELECT * FROM ligas WHERE id_api = ?", (pedido.id_liga,))
+    if not ligas:
         conn.close()
-        raise HTTPException(404, "Liga não encontrada no banco local.")
+        raise HTTPException(404, "Liga nao encontrada no banco local.")
+    liga = ligas[0]
 
-    time_casa = conn.execute(
-        "SELECT * FROM times WHERE id_api = ?", (pedido.id_time_casa,)
-    ).fetchone()
-    time_fora = conn.execute(
-        "SELECT * FROM times WHERE id_api = ?", (pedido.id_time_fora,)
-    ).fetchone()
-    if not time_casa or not time_fora:
+    times_casa = conn.query("SELECT * FROM times WHERE id_api = ?", (pedido.id_time_casa,))
+    times_fora = conn.query("SELECT * FROM times WHERE id_api = ?", (pedido.id_time_fora,))
+    if not times_casa or not times_fora:
         conn.close()
-        raise HTTPException(404, "Time não encontrado no banco local.")
+        raise HTTPException(404, "Time nao encontrado no banco local.")
+    time_casa = times_casa[0]
+    time_fora = times_fora[0]
 
     tem_estatisticas = bool(liga["tem_estatisticas"])
     temporada = liga["temporada_atual"]
@@ -99,9 +99,10 @@ def gerar_analise(pedido: PedidoAnalise):
         "fora": forma_fora,
         "h2h": confrontos,
         "fallback": not tem_estatisticas,
+        "data_partida": pedido.data_partida,
     }
 
-    conn.execute(
+    conn.executar(
         """INSERT INTO analises (id_liga, id_time_casa, id_time_fora, data_partida, resultado_json)
            VALUES (?, ?, ?, ?, ?)""",
         (
@@ -112,7 +113,6 @@ def gerar_analise(pedido: PedidoAnalise):
             json.dumps(resultado, ensure_ascii=False),
         ),
     )
-    conn.commit()
     conn.close()
 
     return resultado
@@ -121,7 +121,7 @@ def gerar_analise(pedido: PedidoAnalise):
 @app.get("/analises")
 def listar_historico(limite: int = 20):
     conn = get_conn()
-    linhas = conn.execute(
+    linhas = conn.query(
         """SELECT a.id, l.nome as liga, tc.nome as time_casa, tf.nome as time_fora,
                   a.data_partida, a.resultado_json, a.criado_em
            FROM analises a
@@ -131,12 +131,11 @@ def listar_historico(limite: int = 20):
            ORDER BY a.criado_em DESC
            LIMIT ?""",
         (limite,),
-    ).fetchall()
+    )
     conn.close()
 
     resultado = []
-    for l in linhas:
-        item = dict(l)
+    for item in linhas:
         item["resultado"] = json.loads(item.pop("resultado_json"))
         resultado.append(item)
     return resultado

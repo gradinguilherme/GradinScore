@@ -24,6 +24,9 @@ PASTA_SCRIPT = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(PASTA_SCRIPT, "analises.db")
 SCHEMA_PATH = os.path.join(PASTA_SCRIPT, "schema.sql")
 
+TURSO_URL = os.environ.get("TURSO_DATABASE_URL")
+TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
+
 if not API_KEY:
     raise SystemExit(
         "Variável de ambiente API_FOOTBALL_KEY não encontrada.\n"
@@ -33,11 +36,43 @@ if not API_KEY:
 HEADERS = {"x-apisports-key": API_KEY}
 
 
-def garantir_schema(conn):
-    """Cria as tabelas a partir do schema.sql se ainda não existirem — sem depender do CLI sqlite3."""
-    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
-        conn.executescript(f.read())
+def conectar():
+    """Retorna conexão com Turso se TURSO_DATABASE_URL estiver definida, senão SQLite local.
+    Para popular o banco de produção, defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN antes de rodar."""
+    if TURSO_URL:
+        import libsql
+        print(f"[conectando ao Turso: {TURSO_URL}]")
+        return libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+    print(f"[conectando ao SQLite local: {DB_PATH}]")
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def rodar_script(conn, sql_texto):
+    """Roda um schema.sql inteiro — funciona igual em sqlite3 e libsql, sem depender de executescript.
+    Filtra linhas de comentário: um trecho que sobra só com comentário (ex: nota final do schema.sql)
+    quebra no Turso, que rejeita "statement" sem SQL real — o SQLite local é mais tolerante com isso."""
+    for bruto in sql_texto.split(";"):
+        linhas_uteis = [l for l in bruto.splitlines() if l.strip() and not l.strip().startswith("--")]
+        instrucao = "\n".join(linhas_uteis).strip()
+        if not instrucao:
+            continue
+        conn.execute(instrucao)
     conn.commit()
+
+
+def inserir_varios(conn, sql, linhas):
+    """Substitui executemany — evita depender de comportamento específico do driver."""
+    for linha in linhas:
+        conn.execute(sql, linha)
+    conn.commit()
+
+
+def garantir_schema(conn):
+    """Cria as tabelas a partir do schema.sql se ainda não existirem."""
+    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+        rodar_script(conn, f.read())
 
 # Ligas já confirmadas nos testes anteriores: (id_api, nome, pais, tem_estatisticas, temporada_atual)
 LIGAS_CONFIRMADAS = [
@@ -86,7 +121,8 @@ def liga_ja_populada(conn, id_liga):
 
 
 def popular_ligas(conn):
-    conn.executemany(
+    inserir_varios(
+        conn,
         """INSERT OR IGNORE INTO ligas (id_api, nome, pais, tem_estatisticas, temporada_atual)
            VALUES (?, ?, ?, ?, ?)""",
         LIGAS_CONFIRMADAS,
@@ -113,19 +149,18 @@ def popular_times(conn):
             (t["team"]["id"], t["team"]["name"], id_liga, t["team"]["country"])
             for t in times_resp
         ]
-        conn.executemany(
+        inserir_varios(
+            conn,
             "INSERT OR IGNORE INTO times (id_api, nome, id_liga, pais) VALUES (?, ?, ?, ?)",
             linhas,
         )
-        conn.commit()
         print(f"  [OK] {len(linhas)} times inseridos para {nome_liga}.\n")
 
         time.sleep(7)  # free tier: 10 req/min
 
 
 if __name__ == "__main__":
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
+    conn = conectar()
     garantir_schema(conn)
 
     print("=== Populando tabela de ligas ===")
