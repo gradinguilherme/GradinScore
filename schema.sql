@@ -12,10 +12,13 @@ CREATE TABLE IF NOT EXISTS ligas (
 );
 
 CREATE TABLE IF NOT EXISTS times (
-    id_api INTEGER PRIMARY KEY,      -- id retornado pela API-Football (ex: 118 = Bahia)
+    id_api INTEGER NOT NULL,         -- id do time na API-Football — NÃO é único sozinho:
+                                      -- o mesmo time pode aparecer em mais de uma competição
+                                      -- (ex: Palmeiras no Brasileirão E na Copa do Brasil)
     nome TEXT NOT NULL,
     id_liga INTEGER NOT NULL,
     pais TEXT NOT NULL,
+    PRIMARY KEY (id_api, id_liga),
     FOREIGN KEY (id_liga) REFERENCES ligas(id_api)
 );
 
@@ -36,8 +39,8 @@ CREATE TABLE IF NOT EXISTS analises (
     resultado_json TEXT NOT NULL,
     criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_liga) REFERENCES ligas(id_api),
-    FOREIGN KEY (id_time_casa) REFERENCES times(id_api),
-    FOREIGN KEY (id_time_fora) REFERENCES times(id_api)
+    FOREIGN KEY (id_time_casa, id_liga) REFERENCES times(id_api, id_liga),
+    FOREIGN KEY (id_time_fora, id_liga) REFERENCES times(id_api, id_liga)
 );
 
 CREATE INDEX IF NOT EXISTS idx_analises_criado ON analises(criado_em);

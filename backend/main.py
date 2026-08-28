@@ -1,4 +1,10 @@
 import json
+import os
+from dotenv import load_dotenv
+
+# Usa o mesmo .env de webapp/ (um nível acima), compartilhado com popular_banco.py e consultar_times.py.
+# Na Vercel, o arquivo não existe e isso não faz nada — as variáveis já vêm do ambiente configurado no dashboard.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -87,8 +93,12 @@ def gerar_analise(pedido: PedidoAnalise):
         raise HTTPException(404, "Liga nao encontrada no banco local.")
     liga = ligas[0]
 
-    times_casa = conn.query("SELECT * FROM times WHERE id_api = ?", (pedido.id_time_casa,))
-    times_fora = conn.query("SELECT * FROM times WHERE id_api = ?", (pedido.id_time_fora,))
+    times_casa = conn.query(
+        "SELECT * FROM times WHERE id_api = ? AND id_liga = ?", (pedido.id_time_casa, pedido.id_liga)
+    )
+    times_fora = conn.query(
+        "SELECT * FROM times WHERE id_api = ? AND id_liga = ?", (pedido.id_time_fora, pedido.id_liga)
+    )
     if not times_casa or not times_fora:
         conn.close()
         raise HTTPException(404, "Time nao encontrado no banco local.")

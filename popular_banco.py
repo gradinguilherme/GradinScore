@@ -16,6 +16,9 @@ import os
 import sqlite3
 import time
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()  # lê o arquivo .env na mesma pasta, se existir — não sobrescreve variáveis já definidas na sessão
 
 API_KEY = os.environ.get("API_FOOTBALL_KEY")
 BASE_URL = "https://v3.football.api-sports.io"
@@ -73,6 +76,72 @@ def garantir_schema(conn):
     """Cria as tabelas a partir do schema.sql se ainda não existirem."""
     with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
         rodar_script(conn, f.read())
+
+
+def migrar_pk_times_composta(conn):
+    """A tabela times tinha id_api como PK sozinho — isso fazia o INSERT OR IGNORE
+    descartar silenciosamente um time que já estava cadastrado em OUTRA competição
+    (ex: Palmeiras já no Brasileirão bloqueava Palmeiras entrar na Copa do Brasil).
+    Recria a tabela com PK composta (id_api, id_liga), sem perder nenhum dado."""
+    info = conn.execute("PRAGMA table_info(times)").fetchall()
+    colunas_pk = [linha for linha in info if linha[5] != 0]
+    if len(colunas_pk) >= 2:
+        return  # já está no formato novo (chave composta)
+
+    print("[migração] recriando tabela times com chave composta (id_api, id_liga)...")
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("DROP TABLE IF EXISTS times_novo")  # sobra de uma tentativa anterior que falhou no meio
+    conn.execute("""CREATE TABLE times_novo (
+        id_api INTEGER NOT NULL,
+        nome TEXT NOT NULL,
+        id_liga INTEGER NOT NULL,
+        pais TEXT NOT NULL,
+        PRIMARY KEY (id_api, id_liga),
+        FOREIGN KEY (id_liga) REFERENCES ligas(id_api)
+    )""")
+    conn.execute("INSERT INTO times_novo SELECT id_api, nome, id_liga, pais FROM times")
+    conn.execute("DROP TABLE times")
+    conn.execute("ALTER TABLE times_novo RENAME TO times")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_times_liga ON times(id_liga)")
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.commit()
+    print("[migração] concluída — nenhum dado perdido, só a estrutura da chave mudou.")
+
+
+def migrar_fk_analises(conn):
+    """A tabela analises tinha FKs simples para times(id_api), que ficaram inválidas
+    quando times passou a ter chave composta (id_api, id_liga). Recria analises com a
+    FK corrigida, preservando os dados existentes."""
+    linhas_fk = conn.execute("PRAGMA foreign_key_list(analises)").fetchall()
+    if len(linhas_fk) >= 5:  # formato novo tem 5 linhas (liga=1 + casa=2 + fora=2); antigo tem 3
+        return
+
+    print("[migração] recriando tabela analises com foreign keys corrigidas...")
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("DROP TABLE IF EXISTS analises_novo")
+    conn.execute("""CREATE TABLE analises_novo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_liga INTEGER NOT NULL,
+        id_time_casa INTEGER NOT NULL,
+        id_time_fora INTEGER NOT NULL,
+        data_partida TEXT,
+        resultado_json TEXT NOT NULL,
+        criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_liga) REFERENCES ligas(id_api),
+        FOREIGN KEY (id_time_casa, id_liga) REFERENCES times(id_api, id_liga),
+        FOREIGN KEY (id_time_fora, id_liga) REFERENCES times(id_api, id_liga)
+    )""")
+    conn.execute("""INSERT INTO analises_novo
+        SELECT id, id_liga, id_time_casa, id_time_fora, data_partida, resultado_json, criado_em
+        FROM analises""")
+    conn.execute("DROP TABLE analises")
+    conn.execute("ALTER TABLE analises_novo RENAME TO analises")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_analises_criado ON analises(criado_em)")
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.commit()
+    print("[migração] concluída.")
 
 
 def migrar_colunas_novas(conn):
@@ -174,16 +243,63 @@ def popular_times(conn):
         time.sleep(7)  # free tier: 10 req/min
 
 
+def suplementar_times_via_fixtures(conn):
+    """Roda para TODAS as competições, mesmo as já populadas via /teams — diferente de
+    popular_times(), não é pulado por idempotência, porque o objetivo aqui é justamente
+    corrigir times que /teams não capturou (comum em copas: clubes que entram numa fase
+    avançada, tipo os times de Série A na Copa do Brasil, não aparecem em /teams mas
+    aparecem em /fixtures assim que jogam a primeira partida).
+    Usa INSERT OR IGNORE — nunca duplica quem já está cadastrado, só adiciona o que falta."""
+    for id_liga, nome_liga, pais, tem_stats, eh_liga, temporada in LIGAS_CONFIRMADAS:
+        print(f"[suplemento via fixtures] {nome_liga} ({pais})")
+        data = get("fixtures", {"league": id_liga, "season": temporada})
+        fixtures = data.get("response", [])
+
+        vistos = {}
+        for f in fixtures:
+            for lado in ("home", "away"):
+                t = f["teams"][lado]
+                vistos[t["id"]] = t["name"]
+
+        if not vistos:
+            print("  [sem fixtures retornados]")
+            time.sleep(7)
+            continue
+
+        antes = conn.execute("SELECT COUNT(*) FROM times WHERE id_liga = ?", (id_liga,)).fetchone()[0]
+
+        linhas = [(tid, nome, id_liga, pais) for tid, nome in vistos.items()]
+        inserir_varios(
+            conn,
+            "INSERT OR IGNORE INTO times (id_api, nome, id_liga, pais) VALUES (?, ?, ?, ?)",
+            linhas,
+        )
+
+        depois = conn.execute("SELECT COUNT(*) FROM times WHERE id_liga = ?", (id_liga,)).fetchone()[0]
+        novos = depois - antes
+        if novos > 0:
+            print(f"  [OK] {novos} time(s) novo(s) encontrado(s) via fixtures que não estavam em /teams.")
+        else:
+            print(f"  [ok] nenhum time novo — /teams já cobria tudo que /fixtures mostra.")
+
+        time.sleep(7)
+
+
 if __name__ == "__main__":
     conn = conectar()
     garantir_schema(conn)
     migrar_colunas_novas(conn)
+    migrar_pk_times_composta(conn)
+    migrar_fk_analises(conn)
 
     print("=== Populando tabela de ligas ===")
     popular_ligas(conn)
 
     print("=== Populando times por liga (idempotente — pode rodar em várias sessões) ===")
     popular_times(conn)
+
+    print("\n=== Suplementando via /fixtures (corrige times que /teams não captura, ex: entrada em fase avançada) ===")
+    suplementar_times_via_fixtures(conn)
 
     total_times = conn.execute("SELECT COUNT(*) FROM times").fetchone()[0]
     total_ligas_completas = conn.execute(
