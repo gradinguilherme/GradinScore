@@ -5,6 +5,7 @@ Cliente fino da API-Football. Concentra as chamadas HTTP e a lógica de
 
 import os
 import time
+from datetime import date, timedelta
 import requests
 
 API_KEY = os.environ.get("API_FOOTBALL_KEY")
@@ -122,6 +123,27 @@ def h2h(team1_id, team2_id, n=5):
             "placar": f"{f['goals']['home']}-{f['goals']['away']}",
         })
     return resultado
+
+
+def fixtures_proximos(id_liga, temporada, dias=10):
+    """
+    Jogos futuros (ainda não iniciados) de uma liga, dentro dos próximos `dias` dias
+    a partir de hoje. Usado pela coleta de jogos (etapa 1 da automação) — não grava
+    nada no banco, só consulta a API-Football e devolve os fixtures brutos filtrados.
+    """
+    hoje = date.today()
+    ate = hoje + timedelta(days=dias)
+    data = _get("fixtures", {
+        "league": id_liga,
+        "season": temporada,
+        "from": hoje.isoformat(),
+        "to": ate.isoformat(),
+    })
+    todos = data.get("response", [])
+    # NS = not started, TBD = a definir (data ainda não confirmada pela competição)
+    futuros = [f for f in todos if f["fixture"]["status"]["short"] in ("NS", "TBD")]
+    futuros.sort(key=lambda f: f["fixture"]["date"])
+    return futuros
 
 
 def tabela_liga(id_liga, temporada):

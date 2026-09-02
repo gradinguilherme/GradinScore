@@ -77,6 +77,46 @@ def listar_times(id_liga: int, q: str = Query(default="", description="Filtro de
     return linhas
 
 
+@app.get("/jogos-proximos")
+def jogos_proximos(
+    ligas: str = Query(default="39,140,78", description="IDs de liga (id_api) separados por vírgula. Padrão: Premier League, La Liga, Bundesliga."),
+    dias: int = Query(default=10, ge=1, le=30, description="Janela de dias a partir de hoje"),
+):
+    ids_liga = [int(x) for x in ligas.split(",") if x.strip()]
+
+    conn = get_conn()
+    resultado = []
+    for id_liga in ids_liga:
+        linhas = conn.query("SELECT * FROM ligas WHERE id_api = ?", (id_liga,))
+        if not linhas:
+            continue  # liga não cadastrada localmente - pula sem derrubar a resposta inteira
+        liga = linhas[0]
+
+        # times já cadastrados dessa liga, pra sinalizar se dá pra chamar /analise direto
+        # ou se precisa rodar popular_banco.py antes (ex: time recém-promovido ainda não seedado)
+        times_liga = conn.query("SELECT id_api FROM times WHERE id_liga = ?", (id_liga,))
+        ids_times_cadastrados = {t["id_api"] for t in times_liga}
+
+        for f in api_football.fixtures_proximos(id_liga, liga["temporada_atual"], dias=dias):
+            id_casa = f["teams"]["home"]["id"]
+            id_fora = f["teams"]["away"]["id"]
+            resultado.append({
+                "fixture_id": f["fixture"]["id"],
+                "id_liga": id_liga,
+                "liga": liga["nome"],
+                "data_partida": f["fixture"]["date"],
+                "id_time_casa": id_casa,
+                "time_casa": f["teams"]["home"]["name"],
+                "id_time_fora": id_fora,
+                "time_fora": f["teams"]["away"]["name"],
+                "times_cadastrados": id_casa in ids_times_cadastrados and id_fora in ids_times_cadastrados,
+            })
+    conn.close()
+
+    resultado.sort(key=lambda j: j["data_partida"])
+    return resultado
+
+
 class PedidoAnalise(BaseModel):
     id_liga: int
     id_time_casa: int
