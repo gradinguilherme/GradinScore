@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import api_football
-from db import get_conn, garantir_schema, limpar_analises_antigas
+from db import get_conn, garantir_schema, limpar_analises_antigas, limpar_jogos_exportados_passados
 
 app = FastAPI(title="GradinScore API")
 
@@ -32,6 +32,7 @@ def startup():
     if conn.modo == "sqlite":
         garantir_schema(conn)  # no Turso, o schema ja foi rodado manualmente uma vez
     limpar_analises_antigas(conn, dias=30)
+    limpar_jogos_exportados_passados(conn, dias=1)
     conn.close()
 
 
@@ -181,6 +182,81 @@ def gerar_analise(pedido: PedidoAnalise):
     conn.close()
 
     return resultado
+
+
+class AnaliseFinalExportada(BaseModel):
+    """Corpo enviado pela etapa 4 do pipeline de automação (Claude) — um jogo já processado
+    pelas etapas 1-3 (coleta, análise primária via API-Football, refinamento via SofaScore)."""
+    fixture_id: int
+    id_liga: int
+    liga: str
+    id_time_casa: int
+    time_casa: str
+    id_time_fora: int
+    time_fora: str
+    data_partida: str
+    analise_primaria: dict
+    refinamento_sofascore: dict
+
+
+@app.post("/analises-finais")
+def publicar_analise_final(pedido: AnaliseFinalExportada):
+    """Upsert por fixture_id — reprocessar o mesmo jogo (ex: etapa 4 rodou de novo) atualiza
+    o registro existente em vez de duplicar."""
+    conn = get_conn()
+    conn.executar(
+        """INSERT OR REPLACE INTO analises_finais_exportadas
+           (fixture_id, id_liga, liga, id_time_casa, time_casa, id_time_fora, time_fora,
+            data_partida, analise_primaria_json, refinamento_sofascore_json, exportado_em)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+        (
+            pedido.fixture_id,
+            pedido.id_liga,
+            pedido.liga,
+            pedido.id_time_casa,
+            pedido.time_casa,
+            pedido.id_time_fora,
+            pedido.time_fora,
+            pedido.data_partida,
+            json.dumps(pedido.analise_primaria, ensure_ascii=False),
+            json.dumps(pedido.refinamento_sofascore, ensure_ascii=False),
+        ),
+    )
+    conn.close()
+    return {"ok": True, "fixture_id": pedido.fixture_id}
+
+
+@app.get("/analises-finais")
+def listar_analises_finais(
+    liga: int = Query(..., description="id_api da liga (id_liga) — obrigatório, a tela é sempre por competição"),
+):
+    """Lista resumida pros cards de liga: só o necessário pra montar a lista de jogos,
+    ordenado por data mais próxima primeiro. Só jogos que ainda vão acontecer."""
+    conn = get_conn()
+    linhas = conn.query(
+        """SELECT fixture_id, id_liga, liga, id_time_casa, time_casa, id_time_fora, time_fora, data_partida
+           FROM analises_finais_exportadas
+           WHERE id_liga = ? AND data_partida >= datetime('now')
+           ORDER BY data_partida ASC""",
+        (liga,),
+    )
+    conn.close()
+    return linhas
+
+
+@app.get("/analises-finais/{fixture_id}")
+def detalhe_analise_final(fixture_id: int):
+    """Detalhe completo de um jogo exportado — primária (API-Football) + refinamento (SofaScore),
+    pra tela de comparação entre os dois times."""
+    conn = get_conn()
+    linhas = conn.query("SELECT * FROM analises_finais_exportadas WHERE fixture_id = ?", (fixture_id,))
+    conn.close()
+    if not linhas:
+        raise HTTPException(404, "Análise não encontrada — o jogo pode não ter sido exportado ainda, ou já passou.")
+    item = linhas[0]
+    item["analise_primaria"] = json.loads(item.pop("analise_primaria_json"))
+    item["refinamento_sofascore"] = json.loads(item.pop("refinamento_sofascore_json"))
+    return item
 
 
 @app.get("/analises")

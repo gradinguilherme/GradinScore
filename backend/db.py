@@ -75,3 +75,14 @@ def garantir_schema(conn):
 
 def limpar_analises_antigas(conn, dias=30):
     conn.executar("DELETE FROM analises WHERE criado_em < datetime('now', ?)", (f"-{dias} days",))
+
+
+def limpar_jogos_exportados_passados(conn, dias=1):
+    """Remove da tabela de análises exportadas (etapa 4) jogos cuja data_partida já
+    passou há mais de `dias` dias. Diferente de limpar_analises_antigas: o critério aqui
+    é a data da PARTIDA, não a data de exportação — um jogo exportado com antecedência
+    não pode ser apagado antes de acontecer só porque já faz alguns dias que foi exportado."""
+    conn.executar(
+        "DELETE FROM analises_finais_exportadas WHERE data_partida < datetime('now', ?)",
+        (f"-{dias} days",),
+    )

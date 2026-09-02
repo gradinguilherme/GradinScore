@@ -34,3 +34,11 @@ export async function gerarAnalise(pedido) {
 export async function getHistorico() {
   return tratar(await fetch(`${API_URL}/analises`))
 }
+
+export async function getAnalisesExportadas(idLiga) {
+  return tratar(await fetch(`${API_URL}/analises-finais?liga=${idLiga}`))
+}
+
+export async function getAnaliseExportada(fixtureId) {
+  return tratar(await fetch(`${API_URL}/analises-finais/${fixtureId}`))
+}

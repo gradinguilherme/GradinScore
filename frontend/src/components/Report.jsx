@@ -10,7 +10,57 @@ function linhaStat(rotulo, valor) {
   )
 }
 
-export default function Report({ resultado }) {
+function blocoPeriodo(rotulo, periodo) {
+  const disponivel = periodo && (periodo.chutes !== null && periodo.chutes !== undefined)
+  return (
+    <div className="refinamento-periodo">
+      <div className="refinamento-periodo-rotulo">{rotulo}</div>
+      <div className="stat-linha">
+        <span className="stat-rotulo">Chutes (média)</span>
+        <span className={`stat-valor ${disponivel ? '' : 'indisponivel'}`}>
+          {disponivel ? periodo.chutes : 'sem dado'}
+        </span>
+      </div>
+      <div className="stat-linha">
+        <span className="stat-rotulo">Chutes no alvo (média)</span>
+        <span className={`stat-valor ${disponivel ? '' : 'indisponivel'}`}>
+          {disponivel ? periodo.chutes_gol : 'sem dado'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function ladoRefinamento(lado, nomeExibicao) {
+  if (!lado) {
+    return (
+      <div className="refinamento-lado">
+        <div className="refinamento-time-nome">{nomeExibicao}</div>
+        <p className="campo-ajuda">Refinamento por tempo não disponível para este time.</p>
+      </div>
+    )
+  }
+  if (lado.erro) {
+    return (
+      <div className="refinamento-lado">
+        <div className="refinamento-time-nome">{nomeExibicao}</div>
+        <p className="campo-ajuda">{lado.erro}</p>
+      </div>
+    )
+  }
+  return (
+    <div className="refinamento-lado">
+      <div className="refinamento-time-nome">{lado.nome_sofascore || nomeExibicao}</div>
+      {blocoPeriodo('1º tempo', lado.t1)}
+      {blocoPeriodo('2º tempo', lado.t2)}
+      {blocoPeriodo('Total do jogo', lado.total)}
+      <div className="campo-ajuda">Baseado em {lado.jogos_considerados ?? 0} jogo(s) considerado(s).</div>
+      {lado.obs && <div className="campo-ajuda" style={{ fontStyle: 'italic' }}>{lado.obs}</div>}
+    </div>
+  )
+}
+
+export default function Report({ resultado, refinamento }) {
   if (!resultado) return null
   const { liga, time_casa, time_fora, casa, fora, h2h, fallback, data_partida } = resultado
 
@@ -29,7 +79,8 @@ export default function Report({ resultado }) {
       {fallback && (
         <div className="aviso-fallback" style={{ margin: '16px 20px 0' }}>
           Esta competição não tem estatísticas de chutes disponíveis na fonte de dados —
-          a análise abaixo usa só gols e confrontos diretos.
+          a análise abaixo usa só gols e confrontos diretos
+          {refinamento ? ', mas o refinamento por tempo abaixo (SofaScore) traz chutes mesmo assim.' : '.'}
         </div>
       )}
 
@@ -80,6 +131,16 @@ export default function Report({ resultado }) {
           <div className="h2h-vazio">Nenhum confronto direto recente registrado.</div>
         )}
       </div>
+
+      {refinamento && (
+        <div className="refinamento-sofascore">
+          <div className="h2h-titulo">Refinamento por tempo (SofaScore)</div>
+          <div className="refinamento-grid">
+            {ladoRefinamento(refinamento.mandante, time_casa)}
+            {ladoRefinamento(refinamento.visitante, time_fora)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
