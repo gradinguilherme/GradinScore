@@ -2,13 +2,17 @@ import { useState } from 'react'
 import { getAnalisesExportadas, getAnaliseExportada } from '../api.js'
 import Report from '../components/Report.jsx'
 
-// As mesmas 3 competições que o pipeline de automação processa hoje
+// As mesmas competições que o pipeline de automação processa hoje
 // (coleta → análise primária → refinamento SofaScore → publicação).
 // Se o pipeline passar a cobrir outra liga, adicionar aqui também.
 const LIGAS_PIPELINE = [
   { id_api: 140, nome: 'La Liga' },
   { id_api: 39, nome: 'Premier League' },
   { id_api: 78, nome: 'Bundesliga' },
+  { id_api: 135, nome: 'Série A Italiana' },
+  { id_api: 61, nome: 'Ligue 1' },
+  { id_api: 71, nome: 'Brasileirão Série A' },
+  { id_api: 72, nome: 'Brasileirão Série B' },
 ]
 
 function formatarData(iso) {
