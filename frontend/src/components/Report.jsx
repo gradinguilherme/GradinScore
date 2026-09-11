@@ -87,6 +87,12 @@ export default function Report({ resultado, refinamento }) {
       <div className="time-sheet">
         <div className="time-coluna casa">
           <div className="time-nome">{time_casa} <span style={{ color: 'var(--chalk-dim)', fontSize: 13 }}>(casa)</span></div>
+          {refinamento?.mandante?.colocacao != null && (
+            <div className="campo-ajuda" style={{ marginBottom: 8 }}>
+              {refinamento.mandante.colocacao}º lugar como mandante no campeonato
+              {refinamento.mandante.total_times_liga ? ` (de ${refinamento.mandante.total_times_liga})` : ''}
+            </div>
+          )}
           {linhaStat('Gols marcados (média)', casa.gols_marcados)}
           {linhaStat('Gols sofridos (média)', casa.gols_sofridos)}
           {!fallback && linhaStat('Chutes (média)', casa.chutes)}
@@ -102,6 +108,12 @@ export default function Report({ resultado, refinamento }) {
 
         <div className="time-coluna fora">
           <div className="time-nome"><span style={{ color: 'var(--chalk-dim)', fontSize: 13 }}>(fora)</span> {time_fora}</div>
+          {refinamento?.visitante?.colocacao != null && (
+            <div className="campo-ajuda" style={{ marginBottom: 8, textAlign: 'right' }}>
+              {refinamento.visitante.colocacao}º lugar como visitante no campeonato
+              {refinamento.visitante.total_times_liga ? ` (de ${refinamento.visitante.total_times_liga})` : ''}
+            </div>
+          )}
           {linhaStat('Gols marcados (média)', fora.gols_marcados)}
           {linhaStat('Gols sofridos (média)', fora.gols_sofridos)}
           {!fallback && linhaStat('Chutes (média)', fora.chutes)}
