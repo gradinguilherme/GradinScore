@@ -15,6 +15,10 @@ const LIGAS_PIPELINE = [
   { id_api: 72, nome: 'Brasileirão Série B' },
 ]
 
+function nomeComColocacao(nome, colocacao) {
+  return colocacao != null ? `${nome} (${colocacao}º)` : nome
+}
+
 function formatarData(iso) {
   try {
     return new Date(iso).toLocaleString('pt-BR', {
@@ -96,7 +100,9 @@ export default function AnalisesExportadas() {
                 )}
                 {jogos && jogos.map((j) => (
                   <div className="jogo-item" key={j.fixture_id} onClick={() => abrirJogo(j.fixture_id)}>
-                    <span className="jogo-item-confronto">{j.time_casa} × {j.time_fora}</span>
+                    <span className="jogo-item-confronto">
+                      {nomeComColocacao(j.time_casa, j.colocacao_casa)} × {nomeComColocacao(j.time_fora, j.colocacao_fora)}
+                    </span>
                     <span className="jogo-item-data">{formatarData(j.data_partida)}</span>
                   </div>
                 ))}

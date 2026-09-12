@@ -231,16 +231,38 @@ def listar_analises_finais(
     liga: int = Query(..., description="id_api da liga (id_liga) — obrigatório, a tela é sempre por competição"),
 ):
     """Lista resumida pros cards de liga: só o necessário pra montar a lista de jogos,
-    ordenado por data mais próxima primeiro. Só jogos que ainda vão acontecer."""
+    ordenado por data mais próxima primeiro. Só jogos que ainda vão acontecer.
+    Inclui a colocação de cada time (extraída do refinamento SofaScore já salvo) pra
+    mostrar direto na lista, sem precisar abrir o detalhe de cada jogo."""
     conn = get_conn()
     linhas = conn.query(
-        """SELECT fixture_id, id_liga, liga, id_time_casa, time_casa, id_time_fora, time_fora, data_partida
+        """SELECT fixture_id, id_liga, liga, id_time_casa, time_casa, id_time_fora, time_fora,
+                  data_partida, refinamento_sofascore_json
            FROM analises_finais_exportadas
            WHERE id_liga = ? AND data_partida >= datetime('now')
            ORDER BY data_partida ASC""",
         (liga,),
     )
     conn.close()
+
+    for item in linhas:
+        refinamento_json = item.pop("refinamento_sofascore_json", None)
+        colocacao_casa = total_times_liga_casa = None
+        colocacao_fora = total_times_liga_fora = None
+        if refinamento_json:
+            try:
+                refinamento = json.loads(refinamento_json)
+                colocacao_casa = refinamento.get("mandante", {}).get("colocacao")
+                total_times_liga_casa = refinamento.get("mandante", {}).get("total_times_liga")
+                colocacao_fora = refinamento.get("visitante", {}).get("colocacao")
+                total_times_liga_fora = refinamento.get("visitante", {}).get("total_times_liga")
+            except (TypeError, ValueError):
+                pass
+        item["colocacao_casa"] = colocacao_casa
+        item["total_times_liga_casa"] = total_times_liga_casa
+        item["colocacao_fora"] = colocacao_fora
+        item["total_times_liga_fora"] = total_times_liga_fora
+
     return linhas
 
 
