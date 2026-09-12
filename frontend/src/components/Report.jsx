@@ -31,7 +31,7 @@ function blocoPeriodo(rotulo, periodo) {
   )
 }
 
-function ladoRefinamento(lado, nomeExibicao) {
+function ladoRefinamento(lado, nomeExibicao, ehMandante) {
   if (!lado) {
     return (
       <div className="refinamento-lado">
@@ -51,6 +51,12 @@ function ladoRefinamento(lado, nomeExibicao) {
   return (
     <div className="refinamento-lado">
       <div className="refinamento-time-nome">{lado.nome_sofascore || nomeExibicao}</div>
+      {lado.colocacao != null && (
+        <div className="campo-ajuda" style={{ marginBottom: 8 }}>
+          {lado.colocacao}º lugar como {ehMandante ? 'mandante' : 'visitante'} no campeonato
+          {lado.total_times_liga ? ` (de ${lado.total_times_liga})` : ''}
+        </div>
+      )}
       {blocoPeriodo('1º tempo', lado.t1)}
       {blocoPeriodo('2º tempo', lado.t2)}
       {blocoPeriodo('Total do jogo', lado.total)}
@@ -148,8 +154,8 @@ export default function Report({ resultado, refinamento }) {
         <div className="refinamento-sofascore">
           <div className="h2h-titulo">Refinamento por tempo (SofaScore)</div>
           <div className="refinamento-grid">
-            {ladoRefinamento(refinamento.mandante, time_casa)}
-            {ladoRefinamento(refinamento.visitante, time_fora)}
+            {ladoRefinamento(refinamento.mandante, time_casa, true)}
+            {ladoRefinamento(refinamento.visitante, time_fora, false)}
           </div>
         </div>
       )}
